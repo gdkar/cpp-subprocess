@@ -37,6 +37,7 @@ int main() {
   auto vec = split ("a b c");
   for (auto elem : vec) { std::cout << elem << std::endl; }
 
+  std::cout << join(vec) << std::endl;
   std::cout << join(vec).length() << std::endl;
   return 0;
 }
