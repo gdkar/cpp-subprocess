@@ -246,13 +246,14 @@ namespace util
   static
   int write_n(int fd, const char* buf, size_t length)
   {
-    int nwritten = 0;
-    while (nwritten < length) {
-      int written = write(fd, buf + nwritten, length - nwritten);
-      if (written == -1) return -1;
+    ssize_t nwritten = 0;
+    while ((size_t)nwritten < length) {
+      auto written = ::write(fd, buf + nwritten, length - nwritten);
+      if (written == -1)
+        return -1;
       nwritten += written;
     }
-    return nwritten;
+    return (int)nwritten;
   }
 
 
@@ -273,21 +274,22 @@ namespace util
   static
   int read_atmost_n(int fd, char* buf, size_t read_upto)
   {
-    int rbytes = 0;
+    ssize_t rbytes = 0;
     int eintr_cnter = 0;
 
     while (1) {
-      int read_bytes = read(fd, buf, read_upto);
+      auto read_bytes = ::read(fd, buf, read_upto);
       if (read_bytes == -1) {
       	if (errno == EINTR) {
-      	  if (eintr_cnter >= 50) return -1;
+      	  if (eintr_cnter >= 50)
+            return -1;
       	  eintr_cnter++;
       	  continue;
-	}
-	return -1;
+        }
+        return -1;
       }
-      if (read_bytes == 0) return rbytes;
-
+      if (read_bytes == 0)
+        return rbytes;
       rbytes += read_bytes;
     }
     return rbytes;
@@ -310,14 +312,14 @@ namespace util
   // Requires Buffer to be of type class Buffer
   static int read_all(int fd, Buffer& buf)
   {
-    size_t orig_size = buf.size();
-    size_t increment = orig_size;
+    auto orig_size = buf.size();
+    auto increment = orig_size;
     auto buffer = buf.data();
-    int total_bytes_read = 0;
+    auto total_bytes_read = 0;
 
     while (1) {
-      int rd_bytes = read_atmost_n(fd, buffer, buf.size());
-      if (rd_bytes == increment) {
+      auto rd_bytes = read_atmost_n(fd, buffer, buf.size());
+      if ((size_t)rd_bytes == increment) {
 	// Resize the buffer to accomodate more
 	orig_size = orig_size * 1.5;
 	increment = orig_size - buf.size();
@@ -352,12 +354,14 @@ namespace util
   static
   std::pair<int, int> wait_for_child_exit(int pid)
   {
-    int status = 0;
-    int ret = -1;
+    auto status = 0;
+    auto ret = -1;
     while (1) {
       ret = waitpid(pid, &status, WNOHANG); 
-      if (ret == -1) break;
-      if (ret == 0) continue;
+      if (ret == -1)
+        break;
+      if (ret == 0)
+        continue;
       return std::make_pair(ret, status);
     }
 
@@ -1092,10 +1096,11 @@ int Popen::wait() throw (OSError)
 int Popen::poll() throw (OSError)
 {
   int status;
-  if (!child_created_) return -1; // TODO: ??
+  if (!child_created_)
+    return -1; // TODO: ??
 
   // Returns zero if child is still running
-  int ret = waitpid(child_pid_, &status, WNOHANG);
+  auto ret = ::waitpid(child_pid_, &status, WNOHANG);
   if (ret == 0) return -1;
 
   if (ret == child_pid_) {
@@ -1173,7 +1178,6 @@ void Popen::execute_process() throw (CalledProcessError, OSError)
   } 
   else 
   {
-    int sys_ret = -1;
     close (err_wr_pipe);// close child side of pipe, else get stuck in read below
 
     stream_.close_child_fds();
@@ -1181,7 +1185,7 @@ void Popen::execute_process() throw (CalledProcessError, OSError)
     try {
       char err_buf[SP_MAX_ERR_BUF_SIZ] = {0,};
 
-      int read_bytes = util::read_atmost_n(
+      auto read_bytes = util::read_atmost_n(
 				  err_rd_pipe, 
 				  err_buf, 
 				  SP_MAX_ERR_BUF_SIZ);
@@ -1290,7 +1294,7 @@ namespace detail {
           // input, output and error
           util::set_clo_on_exec(fd, false);
         } else if(fd != -1) {
-          int res = dup2(fd, to_fd);
+          auto res = ::dup2(fd, to_fd);
           if (res == -1) throw OSError("dup2 failed", errno);
         }
       };
@@ -1404,15 +1408,15 @@ namespace detail {
     // If we are using one pipe, or no pipe
     // at all, using select() or threads is unnecessary.
     auto hndls = {stream_->input(), stream_->output(), stream_->error()};
-    int count = std::count(std::begin(hndls), std::end(hndls), nullptr);
+    auto count = std::count(std::begin(hndls), std::end(hndls), nullptr);
 
-    if (count >= 2) {
+    if ((int)count >= 2) {
       OutBuffer obuf;
       ErrBuffer ebuf;
       if (stream_->input()) {
       	if (msg) {
-	  int wbytes = std::fwrite(msg, sizeof(char), length, stream_->input());
-	  if (wbytes < length) {
+	  auto wbytes = std::fwrite(msg, sizeof(char), length, stream_->input());
+	  if ((size_t)wbytes < length) {
 	    if (errno != EPIPE && errno != EINVAL) {
 	      throw OSError("fwrite error", errno);
 	    }
@@ -1426,7 +1430,7 @@ namespace detail {
       	// at the other end screws up, we get screwed up as well
       	obuf.add_cap(out_buf_cap_);
 
-	int rbytes = util::read_all(
+	auto rbytes = util::read_all(
 				  fileno(stream_->output()),
 				  obuf.buf);
 
@@ -1487,8 +1491,8 @@ namespace detail {
     }
     if (stream_->input()) {
       if (msg) {
-	int wbytes = std::fwrite(msg, sizeof(char), length, stream_->input());
-	if (wbytes < length) {
+	auto wbytes = std::fwrite(msg, sizeof(char), length, stream_->input());
+	if ((size_t)wbytes < length) {
 	  if (errno != EPIPE && errno != EINVAL) {
 	    throw OSError("fwrite error", errno);
 	  }
@@ -1498,12 +1502,12 @@ namespace detail {
     }
 
     if (out_fut.valid()) {
-      int res = out_fut.get();
+      auto res = out_fut.get();
       if (res != -1) obuf.length = res;
       else obuf.length = 0;
     }
     if (err_fut.valid()) {
-      int res = err_fut.get();
+      auto res = err_fut.get();
       if (res != -1) ebuf.length = res;
       else ebuf.length = 0;
     }
@@ -1539,7 +1543,7 @@ namespace detail
     return Popen(std::forward<F>(farg), std::forward<Args>(args)...).wait();
   }
  
-  void pipeline_impl(std::vector<Popen>& cmds) { /* EMPTY IMPL */ }
+  void pipeline_impl(std::vector<Popen>& cmds) { void(sizeof(cmds));/* EMPTY IMPL */ }
 
   template<typename... Args>
   void pipeline_impl(std::vector<Popen>& cmds, 
