@@ -7,3 +7,6 @@ all: ${targets}
 bin/%: %.cc
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $< -o $@
+
+clean:
+	@rm -r bin
