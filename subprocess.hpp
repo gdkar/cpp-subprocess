@@ -537,6 +537,7 @@ struct input
 	}
 	input(IOTYPE typ)
 	{
+        void(sizeof(typ));
 		assert (typ == PIPE && "STDOUT/STDERR not allowed");
 		std::tie(rd_ch_, wr_ch_) = util::pipe_cloexec();
 	}
@@ -569,6 +570,7 @@ struct output
 	}
 	output(IOTYPE typ)
 	{
+        void(sizeof(typ));
 		assert (typ == PIPE && "STDOUT/STDERR not allowed");
 		std::tie(rd_ch_, wr_ch_) = util::pipe_cloexec();
 	}
@@ -603,6 +605,7 @@ struct error
 	}
 	error(IOTYPE typ)
 	{
+        void(sizeof(typ));
 		assert ((typ == PIPE || typ == STDOUT) && "STDERR not aloowed");
 		if (typ == PIPE) {
 			std::tie(rd_ch_, wr_ch_) = util::pipe_cloexec();
@@ -626,33 +629,59 @@ struct error
 // that wont yield me the consistent syntax which I am 
 // aiming for. If you know, then please do let me know.
 
-class preexec_func
+struct function_arg
 {
-public:
-	preexec_func() {}
+	constexpr function_arg() : holder_{nullptr}{}
 
-	template <typename Func>
-	preexec_func(Func f)
-	: holder_(new FuncHolder<Func>(f))
+    function_arg(function_arg&&) noexcept = default;
+    function_arg&operator=(function_arg &&) noexcept = default;
+	template <typename F>
+	function_arg(F && f)
+	: holder_{new FuncHolder<F>(std::forward<F>(f))}
 	{}
-
+    bool operator !()const {return !holder_;}
+    operator bool() const  {return bool(holder_);}
 	void operator()() {
 		(*holder_)();
 	}
 
 private:
 	struct HolderBase {
-		virtual void operator()() const;
+        virtual ~HolderBase() = default;
+		virtual void operator()() = 0;
 	};
-	template <typename T>
+	template <typename F>
 	struct FuncHolder: HolderBase {
-		FuncHolder(T func): func_(func) {}
-		void operator()() const override {}
+       ~FuncHolder() override = default;
+		FuncHolder(F func): func_{func} {}
+		void operator()() override { func_(); }
 		// The function pointer/reference
-		T func_;
+		F func_;
 	};
-
-	std::unique_ptr<HolderBase> holder_ = nullptr;
+	std::unique_ptr<HolderBase> holder_ ;
+};
+class preexec_func : public function_arg {
+public:
+    constexpr preexec_func() : function_arg() {}
+    template<class F>
+    preexec_func(F && f)
+    : function_arg(std::forward<F>(f)) {}
+};
+class  exec_func : public function_arg {
+    struct scoped_exit {
+        ~scoped_exit() {
+            std::_Exit(-1);
+        }
+    };
+public:
+    constexpr exec_func() : function_arg() {}
+    template<class F>
+    exec_func(F && f)
+    : function_arg{[f=std::forward<F>(f)](){
+        std::atexit([](){std::_Exit(0);});
+        std::at_quick_exit([](){std::_Exit(0);});
+        std::_Exit(f());
+    }} {}
 };
 
 // ~~~~ End Popen Args ~~~~
@@ -767,6 +796,7 @@ struct ArgumentDeducer
 	void set_option(error&& err);
 	void set_option(close_fds&& cfds);
 	void set_option(preexec_func&& prefunc);
+    void set_option(exec_func&& exefunc);
 	void set_option(session_leader&& sleader);
 
 private:
@@ -1112,6 +1142,7 @@ private:
 	bool defer_process_start_ = false;
 	bool close_fds_ = false;
 	bool has_preexec_fn_ = false;
+	bool has_exec_fn_ = false;
 	bool shell_ = false;
 	bool session_leader_ = false;
 
@@ -1119,6 +1150,7 @@ private:
 	std::string cwd_;
 	std::map<std::string, std::string> env_;
 	preexec_func preexec_fn_;
+    exec_func exec_fn_;
 
 	// Command in string format
 	std::string args_;
@@ -1357,6 +1389,10 @@ namespace detail {
 		popen_->preexec_fn_ = std::move(prefunc);
 		popen_->has_preexec_fn_ = true;
 	}
+	void ArgumentDeducer::set_option(exec_func && efunc ) {
+		popen_->exec_fn_ = std::move(efunc);
+		popen_->has_exec_fn_ = true;
+	}
 
 
 	void Child::execute_child()
@@ -1434,15 +1470,23 @@ namespace detail {
 				if (sys_ret == -1)
 					throw OSError("setsid failed", errno);
 			}
-
+            auto exec_action = [&]() {
+                if(parent_->has_exec_fn_) {
+                    parent_->exec_fn_();
+                }else{
+                    sys_ret = execvp(parent_->exe_name_.c_str(), parent_->cargv_.data());
+                }
+            };
 			// Replace the current image with the executable
 			if (parent_->env_.size()) {
-				for (auto& kv : parent_->env_) {
+				for (auto& kv : parent_->env_)
 					setenv(kv.first.c_str(), kv.second.c_str(), 1);
-	}
-				sys_ret = execvp(parent_->exe_name_.c_str(), parent_->cargv_.data());
+                exec_action();
+
+//				sys_ret = execvp(parent_->exe_name_.c_str(), parent_->cargv_.data());
 			} else {
-				sys_ret = execvp(parent_->exe_name_.c_str(), parent_->cargv_.data());
+                exec_action();
+//				sys_ret = execvp(parent_->exe_name_.c_str(), parent_->cargv_.data());
 			}
 
 			if (sys_ret == -1)
