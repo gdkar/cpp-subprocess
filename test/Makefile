@@ -1,4 +1,4 @@
-CXXFLAGS += -std=gnu++11 -pthread
+CXXFLAGS += -std=gnu++14 -pthread
 
 targets := $(patsubst %.cc,bin/%,$(wildcard *.cc))
 
