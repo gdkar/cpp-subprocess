@@ -1068,6 +1068,19 @@ public:
 		if (!defer_process_start_)
 			execute_process();
 	}
+	template <template<class...> typename C, typename... Args>
+	Popen(C<std::string> cmd_args, Args&& ...args)
+    : vargs_(std::begin(cmd_args),std::end(cmd_args))
+	{
+//		vargs_.insert(vargs_.end(), cmd_args.begin(), cmd_args.end());
+		init_args(std::forward<Args>(args)...);
+
+		// Setup the communication channels of the Popen class
+		stream_.setup_comm_channels();
+		if (!defer_process_start_)
+			execute_process();
+	}
+
 	template <typename... Args>
 	Popen(std::initializer_list<const char*> cmd_args, Args&& ...args)
     : vargs_(std::begin(cmd_args),std::end(cmd_args))
@@ -1733,6 +1746,11 @@ int call(C<const char*> plist, Args&&... args)
 {
 	return (detail::call_impl(plist, std::forward<Args>(args)...));
 }
+template <template<class> typename C, typename... Args>
+int call(C<std::string> plist, Args&&... args)
+{
+	return (detail::call_impl(plist, std::forward<Args>(args)...));
+}
 template <typename... Args>
 int call(std::initializer_list<const char*> plist, Args&&... args)
 {
@@ -1752,6 +1770,11 @@ int call(const std::string& arg, Args&&... args)
  */
 template <template<class> typename C, typename... Args>
 OutBuffer check_output(C<const char*> plist, Args&&... args)
+{
+	return (detail::check_output_impl(plist, std::forward<Args>(args)...));
+}
+template <template<class> typename C, typename... Args>
+OutBuffer check_output(C<std::string> plist, Args&&... args)
 {
 	return (detail::check_output_impl(plist, std::forward<Args>(args)...));
 }
