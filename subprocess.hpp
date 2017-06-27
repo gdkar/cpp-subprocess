@@ -1043,38 +1043,21 @@ public:
 	friend class detail::Child;
 
 	template <typename... Args>
-	Popen(const std::string& cmd_args, Args&& ...args):
-		args_(cmd_args)
+	Popen(const std::string& cmd_args, Args&& ...args)
+    : args_(cmd_args)
+    , vargs_{util::split(cmd_args)}
 	{
-		vargs_ = util::split(cmd_args);
 		init_args(std::forward<Args>(args)...);
-
-		// Setup the communication channels of the Popen class
-		stream_.setup_comm_channels();
-
-		if (!defer_process_start_)
-			execute_process();
-	}
-
-	template <template<class...> typename C, typename... Args>
-	Popen(C<const char*> cmd_args, Args&& ...args)
-    : vargs_(std::begin(cmd_args),std::end(cmd_args))
-	{
-//		vargs_.insert(vargs_.end(), cmd_args.begin(), cmd_args.end());
-		init_args(std::forward<Args>(args)...);
-
 		// Setup the communication channels of the Popen class
 		stream_.setup_comm_channels();
 		if (!defer_process_start_)
 			execute_process();
 	}
-	template <template<class...> typename C, typename... Args>
-	Popen(C<std::string> cmd_args, Args&& ...args)
+	template <typename C, typename... Args>
+	Popen(C && cmd_args, Args&& ...args)
     : vargs_(std::begin(cmd_args),std::end(cmd_args))
 	{
-//		vargs_.insert(vargs_.end(), cmd_args.begin(), cmd_args.end());
 		init_args(std::forward<Args>(args)...);
-
 		// Setup the communication channels of the Popen class
 		stream_.setup_comm_channels();
 		if (!defer_process_start_)
@@ -1085,9 +1068,7 @@ public:
 	Popen(std::initializer_list<const char*> cmd_args, Args&& ...args)
     : vargs_(std::begin(cmd_args),std::end(cmd_args))
 	{
-//		vargs_.insert(vargs_.end(), cmd_args.begin(), cmd_args.end());
 		init_args(std::forward<Args>(args)...);
-
 		// Setup the communication channels of the Popen class
 		stream_.setup_comm_channels();
 		if (!defer_process_start_)
@@ -1691,7 +1672,7 @@ namespace detail {
 namespace detail
 {
 	template<typename F, typename... Args>
-	OutBuffer check_output_impl(F& farg, Args&&... args)
+	OutBuffer check_output_impl(F&& farg, Args&&... args)
 	{
 		static_assert(!detail::has_type<output, detail::param_pack<Args...>>::value, "output not allowed in args");
 		auto p = Popen(std::forward<F>(farg), std::forward<Args>(args)..., output{PIPE});
@@ -1704,7 +1685,7 @@ namespace detail
 	}
 
 	template<typename F, typename... Args>
-	int call_impl(F& farg, Args&&... args)
+	int call_impl(F&& farg, Args&&... args)
 	{
 		return Popen(std::forward<F>(farg), std::forward<Args>(args)...).wait();
 	}
@@ -1741,15 +1722,10 @@ namespace detail
  * The parameters passed to the argument are exactly the same
  * one would use for Popen constructors.
  */
-template <template<class> typename C, typename... Args>
-int call(C<const char*> plist, Args&&... args)
+template <typename C, typename... Args>
+int call(C && plist, Args&&... args)
 {
-	return (detail::call_impl(plist, std::forward<Args>(args)...));
-}
-template <template<class> typename C, typename... Args>
-int call(C<std::string> plist, Args&&... args)
-{
-	return (detail::call_impl(plist, std::forward<Args>(args)...));
+	return (detail::call_impl(std::forward<C>(plist), std::forward<Args>(args)...));
 }
 template <typename... Args>
 int call(std::initializer_list<const char*> plist, Args&&... args)
@@ -1768,16 +1744,16 @@ int call(const std::string& arg, Args&&... args)
  * If the exit code was non-zero it raises a CalledProcessError.
  * The arguments are the same as for the Popen constructor.
  */
-template <template<class> typename C, typename... Args>
-OutBuffer check_output(C<const char*> plist, Args&&... args)
+template <typename C, typename... Args>
+OutBuffer check_output(C && plist, Args&&... args)
 {
-	return (detail::check_output_impl(plist, std::forward<Args>(args)...));
+	return (detail::check_output_impl(std::forward<C>(plist), std::forward<Args>(args)...));
 }
-template <template<class> typename C, typename... Args>
-OutBuffer check_output(C<std::string> plist, Args&&... args)
-{
-	return (detail::check_output_impl(plist, std::forward<Args>(args)...));
-}
+//template <template<class> typename C, typename... Args>
+//OutBuffer check_output(C<std::string> plist, Args&&... args)
+//{
+//	return (detail::check_output_impl(plist, std::forward<Args>(args)...));
+//}
 template <typename... Args>
 OutBuffer check_output(std::initializer_list<const char*> plist, Args&&... args)
 {
